@@ -1,12 +1,15 @@
-" Chosen rule: keep the left position unchanged
+" Easy swapping of text
 "
-" There will be a shift of one character to the right for the cases:
-" a ==b or a== b
+" Author: Dimitar Dimitrov (mitkofr@yahoo.fr), kurkale6ka
+"
+" Latest version at:
+" http://github.com/kurkale6ka/vimfiles/blob/master/plugin/swap.vim
 "
 " Todo: rightleft
 " Todo: repeat.vim
 " Todo: add the possibility to define custom 'operators'
-" Todo: Change [&& 'V' !=# visualmode()] to something better (see line 47)
+" Todo: re-position the cursor using cursor()
+"       Position of cursor in the visual area?
 
 if exists('g:loaded_swap')
     finish
@@ -21,97 +24,65 @@ function! Swap_comparison_operands(mode) range
         if 'vi' == a:mode
 
             let operators = input('Pivot: ')
-            let operators = '\(' . operators . '\)'
+            let operators = '\%(' . operators . '\)'
         else
-            let operators = '\(===\|!==\|<>\|\%(=[=~]\|![=~]\|>=\|>\|<=\|<\)[#?]\?\)'
+            let operators =
+                \'\%(===\|!==\|<>\|\%(=[=~]\|![=~]\|>=\|>\|<=\|<\)[#?]\?\)'
         endif
 
-        if col("'<") < col("'>")
+        " Whole lines
+        if 'V' ==# visualmode() ||
+            \ 'v' ==# visualmode() && line("'<") != line("'>")
 
-            let col_start = col("'<")
-            let col_end   = col("'>") + 1
+            execute 'silent ' . a:firstline . ',' . a:lastline .
+                \'substitute/^[[:space:]]*\zs' .
+                \'\([^[:space:]].\{-}\)' .
+                \'\([[:space:]]*' . operators . '[[:space:]]*\)' .
+                \'\([^[:space:]].\{-}\)' .
+                \'\ze[[:space:]]*$/\3\2\1/e'
         else
-            let col_start = col("'>")
-            let col_end   = col("'<") + 1
-        endif
+            if col("'<") < col("'>")
 
-        for i in range(a:firstline, a:lastline)
-
-            execute i
-
-            if 'V' ==# visualmode() ||
-                \ 'v' ==# visualmode() && line("'<") != line("'>")
-
-                let col_start = 1
-                let col_end   = col('$')
+                let col_start = col("'<")
+                let col_end   = col("'>") + 1
+            else
+                let col_start = col("'>")
+                let col_end   = col("'<") + 1
             endif
 
-            execute 'silent substitute/\%' . col_start . 'c\([[:space:]]*\)\(.\{-1,}\)\([[:space:]]*\)' .
-                \operators .
-                \'\([[:space:]]*\)\(.\{-1,}\)[[:space:]]*' .
-                \'\%' . col_end . 'c/\=' .
-                \'Swap_operands(' .
-                \'strlen(submatch(1) . submatch(2) . submatch(4) . submatch(6)),' .
-                \'submatch(2),' .
-                \'submatch(3),' .
-                \'submatch(4),' .
-                \'submatch(5),' .
-                \'submatch(6),' .
-                \col_start. ',' .
-                \col_end  . ')/e'
-        endfor
+            execute 'silent ' . a:firstline . ',' . a:lastline .
+                \'substitute/\%' . col_start . 'c[[:space:]]*\zs' .
+                \'\([^[:space:]].\{-}\)' .
+                \'\([[:space:]]*' . operators . '[[:space:]]*\)' .
+                \'\([^[:space:]].\{-}\)' .
+                \'\ze[[:space:]]*\%' . col_end . 'c/\3\2\1/e'
+        endif
 
-    elseif 'nr' == a:mode
+        normal `>
 
-        normal daWWP
+    elseif a:mode =~ 'n'
 
-    elseif 'nl' == a:mode
+        let col_bak  = col('.')
+        let line_bak = line('.')
 
-        normal daWBP
+        if 'nl' == a:mode
+
+            call search('[^[:space:]]\+' .
+                \'\%([[:space:]]\+\|\_[[:space:]]\+\)' .
+                \'[^[:space:]]*\%' . col('.') . 'c', 'b')
+        endif
+
+        execute 'substitute/\([^[:space:]]*\%' . col('.') . 'c[^[:space:]]*\)' .
+            \'\([[:space:]]\+\|\_[[:space:]]*\)' .
+            \'\([^[:space:]]\+\)/\3\2\1/e'
+
+        call cursor(line_bak, col_bak)
+
     endif
 
 endfunction
 
-function! Swap_operands(left_length, l_ope, sp1, op, sp2, r_ope, col1, col2)
-
-    let right_length = a:col2 - a:col1 - a:left_length
-
-    " a==b
-    " ->
-    " b==a
-    if a:sp1 !~ '[[:space:]]' && a:sp2 !~ '[[:space:]]'
-
-        if right_length > 0 && 'V' !=# visualmode()
-
-            let res  = printf('%' . a:left_length . 's%-' . right_length . 's',
-                \a:r_ope . a:op . a:l_ope, ' ')
-        else
-            let res  = printf('%' . a:left_length . 's',
-                \a:r_ope . a:op . a:l_ope)
-        endif
-
-    " a == b or a ==b or a== b
-    " ->
-    " b == a
-    else
-        let _left_length = a:left_length + 2
-        let _right_length = right_length - 2
-
-        if right_length > 2 && 'V' !=# visualmode()
-
-            let res  = printf('%' . _left_length . 's%-' . _right_length . 's',
-                \a:r_ope . ' ' . a:op . ' ' . a:l_ope, ' ')
-        else
-            let res  = printf('%' . _left_length . 's',
-                \a:r_ope . ' ' . a:op . ' ' . a:l_ope)
-        endif
-    endif
-
-    return res
-
-endfunction
-
-vmap <leader>=         :     call Swap_comparison_operands('v')<cr>
-vmap <leader><leader>= :     call Swap_comparison_operands('vi')<cr>
-nmap <leader>=         :<c-u>call Swap_comparison_operands('nr')<cr>
-nmap <leader>l=        :<c-u>call Swap_comparison_operands('nl')<cr>
+vmap <leader>x         :call Swap_comparison_operands('v')<cr>
+vmap <leader><leader>x :call Swap_comparison_operands('vi')<cr>
+nmap <leader>x         :<c-u>call Swap_comparison_operands('nr')<cr>
+nmap <leader><left>x   :<c-u>call Swap_comparison_operands('nl')<cr>
