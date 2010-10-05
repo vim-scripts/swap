@@ -6,28 +6,73 @@
 " http://github.com/kurkale6ka/vimfiles/blob/master/plugin/swap.vim
 "
 " Todo: rightleft
-" Todo: repeat.vim
-" Todo: add the possibility to define custom 'operators'
+" Todo: repeat.vim for visual mode
 " Todo: re-position the cursor using cursor()
 "       Position of cursor in the visual area?
 
-if exists('g:loaded_swap')
+if exists('g:loaded_swap') || &compatible || v:version < 700
+
+    if &compatible && &verbose
+
+        echo "Swap is not designed to work in compatible mode."
+
+    elseif v:version < 700
+
+        echo "Swap needs Vim 7.0 or above to work correctly."
+    endif
+
     finish
 endif
+
 let g:loaded_swap = 1
 
-function! Swap_comparison_operands(mode) range
+let s:savecpo = &cpoptions
+set cpoptions&vim
+
+function! s:Swap(mode) range
 
     if a:mode =~ 'v'
+
+        let save_cursor = getpos("'>")
 
         " visual interactive :)
         if 'vi' == a:mode
 
             let operators = input('Pivot: ')
-            let operators = '\%(' . operators . '\)'
         else
-            let operators =
-                \'\%(===\|!==\|<>\|\%(=[=~]\|![=~]\|>=\|>\|<=\|<\)[#?]\?\)'
+            let comparison_ops = ['===', '!==',  '<>', '==#', '!=#',  '>#',
+                                 \'>=#',  '<#', '<=#', '=~#', '!~#', '==?',
+                                 \'!=?',  '>?', '>=?',  '<?', '<=?', '=~?',
+                                 \'!~?',  '==',  '!=',  '>=',  '<=',  '=~',
+                                 \ '~=',  '!~']
+            let logical_ops    = [ '&&',  '||']
+            let assignment_ops = [ '+=',  '-=',  '*=',  '/=',  '%=',  '&=',
+                                 \ '|=',  '^=', '<<=', '>>=']
+            let scope_ops      = [ '::']
+            let pointer_ops    = ['->*',  '->',  '.*']
+            let bitwise_ops    = [ '<<',  '>>']
+            let misc_ops       = [  '>',   '<',   '=',   '+',   '-',   '*',
+                                 \  '/',   '%',   '&',   '|',   '^',   '.',
+                                 \  '?',   ':',   ',',  "'=",  "'<",  "'>",
+                                 \ '!<',  '!>']
+
+            let operators_list = comparison_ops +
+                               \ logical_ops    +
+                               \ assignment_ops +
+                               \ scope_ops      +
+                               \ pointer_ops    +
+                               \ bitwise_ops
+
+            if exists('g:swap_custom_ops')
+
+                " let g:swap_custom_ops = ['first_operator', 'second_operator']
+                let operators_list += g:swap_custom_ops
+            endif
+
+            let operators_list += misc_ops
+
+            let operators = join(operators_list, '\|')
+            let operators = escape(operators, '*/~.^$')
         endif
 
         " Whole lines
@@ -35,9 +80,10 @@ function! Swap_comparison_operands(mode) range
             \ 'v' ==# visualmode() && line("'<") != line("'>")
 
             execute 'silent ' . a:firstline . ',' . a:lastline .
-                \'substitute/^[[:space:]]*\zs' .
+                \'substitute/'           .
+                \  '^[[:space:]]*\zs'    .
                 \'\([^[:space:]].\{-}\)' .
-                \'\([[:space:]]*' . operators . '[[:space:]]*\)' .
+                \ '\([[:space:]]*\%('    . operators . '\)[[:space:]]*\)' .
                 \'\([^[:space:]].\{-}\)' .
                 \'\ze[[:space:]]*$/\3\2\1/e'
         else
@@ -51,38 +97,56 @@ function! Swap_comparison_operands(mode) range
             endif
 
             execute 'silent ' . a:firstline . ',' . a:lastline .
-                \'substitute/\%' . col_start . 'c[[:space:]]*\zs' .
+                \'substitute/\%'         . col_start . 'c[[:space:]]*\zs' .
                 \'\([^[:space:]].\{-}\)' .
-                \'\([[:space:]]*' . operators . '[[:space:]]*\)' .
+                \ '\([[:space:]]*\%('    . operators . '\)[[:space:]]*\)' .
                 \'\([^[:space:]].\{-}\)' .
-                \'\ze[[:space:]]*\%' . col_end . 'c/\3\2\1/e'
+                \'\ze[[:space:]]*\%'     . col_end . 'c/\3\2\1/e'
         endif
 
-        normal `>
-
+    " Swap Words
     elseif a:mode =~ 'n'
 
-        let col_bak  = col('.')
-        let line_bak = line('.')
+        let save_cursor = getpos(".")
 
+        " swap with Word on the left
         if 'nl' == a:mode
 
-            call search('[^[:space:]]\+' .
-                \'\%([[:space:]]\+\|\_[[:space:]]\+\)' .
-                \'[^[:space:]]*\%' . col('.') . 'c', 'bW')
+            call search('[^[:space:]]\+'  .
+                      \'\_[[:space:]]\+'  .
+                      \ '[^[:space:]]*\%#', 'bW')
         endif
 
-        execute 'substitute/\([^[:space:]]*\%' . col('.') . 'c[^[:space:]]*\)' .
-            \'\([[:space:]]\+\|\_[[:space:]]\+\)' .
-            \'\([^[:space:]]\+\)/\3\2\1/e'
-
-        call cursor(line_bak, col_bak)
-
+        " swap with Word on the right
+        execute 'silent substitute/'              .
+            \ '\([^[:space:]]*\%#[^[:space:]]*\)' .
+            \'\(\_[[:space:]]\+\)'                .
+            \ '\([^[:space:]]\+\)/\3\2\1/e'
     endif
+
+    " repeat
+    let virtualedit_bak = &virtualedit
+    set virtualedit=
+
+    if 'nr' == a:mode
+
+        silent! call repeat#set("\<plug>SwapSwapWithR_WORD")
+
+    elseif 'nl' == a:mode
+
+        silent! call repeat#set("\<plug>SwapSwapWithL_WORD")
+    endif
+
+    let &virtualedit = virtualedit_bak
+
+    call setpos('.', save_cursor)
 
 endfunction
 
-vmap <leader>x         :call Swap_comparison_operands('v')<cr>
-vmap <leader><leader>x :call Swap_comparison_operands('vi')<cr>
-nmap <leader>x         :<c-u>call Swap_comparison_operands('nr')<cr>
-nmap <leader>X         :<c-u>call Swap_comparison_operands('nl')<cr>
+vmap <silent> <plug>SwapSwapOperands      :     call <sid>Swap('v' )<cr>
+vmap <silent> <plug>SwapSwapOperandsPivot :     call <sid>Swap('vi')<cr>
+nmap <silent> <plug>SwapSwapWithR_WORD    :<c-u>call <sid>Swap('nr')<cr>
+nmap <silent> <plug>SwapSwapWithL_WORD    :<c-u>call <sid>Swap('nl')<cr>
+
+let &cpoptions = s:savecpo
+unlet s:savecpo
